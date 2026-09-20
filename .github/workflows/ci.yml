@@ -24,9 +24,17 @@ jobs:
         with:
           persist-credentials: false
       - name: Install toolchains
-        run: |
-          rustup toolchain install stable --profile minimal --component clippy
-          rustup toolchain install nightly --profile minimal --component rustfmt
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: stable
+          components: clippy
+          rustflags: ""
+      - name: Install nightly rustfmt
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: nightly
+          components: rustfmt
+          rustflags: ""
       - name: Install development tools
         uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
         with:
@@ -44,8 +52,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Install stable toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          toolchain: stable
+          rustflags: ""
       - name: Install task runner
         uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
         with:
