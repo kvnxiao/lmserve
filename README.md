@@ -75,9 +75,9 @@ group, comment normalization, and Unix newlines. Configure editors to invoke
 `rustup run nightly rustfmt`.
 
 [dprint](https://dprint.dev/plugins/) formats Markdown, YAML, JSON/JSONC, TOML,
-and HTML/XML markup, including repository instructions, skills, and workflows.
+and HTML/XML markup, including repository instructions and workflows.
 `dprint.json` preserves existing Markdown paragraph wrapping and excludes the
-local, untracked `SPEC.md`, generated Cargo lockfile, and build output. Run
+`.agents` directory, local untracked `SPEC.md`, generated Cargo lockfile, and build output. Run
 `dprint config update` to update the formatter plugins, then `just fmt` to apply
 their formatting.
 

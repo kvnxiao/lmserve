@@ -4,7 +4,7 @@
     "textWrap": "maintain"
   },
   "includes": ["**/*"],
-  "excludes": ["SPEC.md", "Cargo.lock", "**/target", "**/node_modules"],
+  "excludes": [".agents", "SPEC.md", "Cargo.lock", "**/target", "**/node_modules"],
   "plugins": [
     "npm:@dprint/markdown@0.24.0",
     "npm:@dprint/json@0.24.0",

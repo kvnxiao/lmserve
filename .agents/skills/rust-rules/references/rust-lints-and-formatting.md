@@ -222,7 +222,7 @@ replacing the adapter name with the project's API:
 
 ```toml
 disallowed-methods = [
-  { path = "std::env::var", reason = "use system::env_var for injectable environment access" },
+    { path = "std::env::var", reason = "use system::env_var for injectable environment access" },
 ]
 ```
 
@@ -237,8 +237,8 @@ types:
 
 ```toml
 await-holding-invalid-types = [
-  "tracing::span::Entered",
-  "tracing::span::EnteredSpan",
+    "tracing::span::Entered",
+    "tracing::span::EnteredSpan",
 ]
 ```
 
