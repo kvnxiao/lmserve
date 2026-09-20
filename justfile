@@ -24,6 +24,9 @@ test:
 test-provider:
     cargo +stable test --package lmserve --locked --test cli provider_contract -- --ignored
 
+test-hf:
+    uv run --no-project --with huggingface-hub==1.32.0 --with transformers==5.17.0 sh -c 'LMSERVE_TEST_PYTHON="$(command -v python)" cargo +stable test --package lmserve --locked --test cli huggingface_cache_contract -- --ignored'
+
 build:
     cargo +stable build --workspace --all-targets --all-features --locked
 

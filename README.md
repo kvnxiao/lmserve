@@ -89,6 +89,10 @@ slicing, and explicit panic; `unwrap` remains denied.
   1.5.0 or newer and a fake Podman executable. It resolves the provider from `PATH`; set
   `LMSERVE_TEST_PROVIDER` to select an explicit executable path. It does not install tools, run
   containers, or use a GPU.
+- `just test-hf` uses `uv` to run the offline cache contract with `huggingface-hub` 1.32.0 and
+  Transformers 5.17.0. Installing those Python dependencies may require network access. The test
+  blocks network calls and cache writes while resolving configuration, a tokenizer, and a fake
+  weight file from prepared content; it does not run vLLM or load real model weights.
 - `just dependencies` checks advisories and unused dependencies.
 - `just build` builds all workspace targets.
 - `just verify` runs lint checks, tests, dependency checks, and builds.
@@ -96,9 +100,9 @@ slicing, and explicit panic; `unwrap` remains denied.
 CI invokes the shared verification task and checks each member's minimum compiler version in a
 separate job. Dependency auditing fetches the advisory database and requires network access.
 Application tests isolate state, cache, configuration, and executable lookup in temporary
-directories. They do not invoke a live runtime or download models. The provider contract test is
-separate from `just verify`. Release builds retain line-table debug information for profilers and
-backtraces.
+directories. They do not invoke a live runtime or download models. The provider and Hugging Face
+cache contract tests are separate from `just verify`. Release builds retain line-table debug
+information for profilers and backtraces.
 
 Runtime tools are not required for the default build and test tasks. Cargo requirements use major
 versions for stable crates and the current minor for crates below 1.0; `Cargo.lock` records the

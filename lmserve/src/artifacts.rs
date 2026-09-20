@@ -33,6 +33,32 @@ pub(crate) fn prepared(state: &State, selection: &Selection) -> Result<Prepared>
 }
 
 pub(crate) fn verify_manifest(prepared: &Prepared) -> Result<()> {
+    if prepared.source.file.is_none() {
+        ensure!(
+            prepared.path == prepared.owned_directory.join("hub"),
+            "prepared repository requires a Hugging Face cache; run update-models"
+        );
+        let repository = prepared.path.join(hub_repository(&prepared.source.repo));
+        ensure!(
+            fs_err::read_to_string(repository.join("refs/main"))? == prepared.revision,
+            "prepared cache revision changed; run update-models"
+        );
+        let snapshots = repository.join("snapshots");
+        let entries = fs_err::read_dir(&snapshots)?.collect::<std::io::Result<Vec<_>>>()?;
+        ensure!(
+            entries.len() == 1
+                && entries
+                    .first()
+                    .is_some_and(|entry| entry.file_name() == prepared.revision.as_str()),
+            "prepared cache must contain exactly its recorded revision; run update-models"
+        );
+        let mut count = 0;
+        verify_tree(&prepared.path, &prepared.path, &mut count)?;
+        ensure!(
+            count == prepared.files.len(),
+            "prepared cache file set changed; run update-models"
+        );
+    }
     for (relative, size) in &prepared.files {
         let path = if relative.is_empty() {
             prepared.path.clone()
@@ -120,13 +146,21 @@ pub(crate) fn update(store: &Store, selection: &Selection) -> Result<Prepared> {
     }
     let revision = resolve_revision(selection)?;
     let directory = owned_root(selection)?;
-    let identity = state::digest(&serde_json::to_vec(&(
+    let mut identity = serde_json::to_vec(&(
         &selection.model.huggingface.repo,
         &revision,
         &selection.model.huggingface.file,
-    ))?);
+    ))?;
+    if selection.model.huggingface.file.is_none() {
+        identity.extend_from_slice(b"hub-cache-v1");
+    }
+    let identity = state::digest(&identity);
     let target = directory.join(&identity);
-    let content = target.join("content");
+    let content = target.join(if selection.model.huggingface.file.is_some() {
+        "content"
+    } else {
+        "hub"
+    });
     if !target.exists() {
         download(selection, &revision, &directory, &target)?;
     }
@@ -182,7 +216,11 @@ fn resolve_revision(selection: &Selection) -> Result<String> {
         revision.len() == 40 && revision.bytes().all(|c| c.is_ascii_hexdigit()),
         "hf returned an invalid commit identity"
     );
-    Ok(revision.to_owned())
+    Ok(revision.to_ascii_lowercase())
+}
+
+fn hub_repository(repo: &str) -> String {
+    format!("models--{}", repo.replace('/', "--"))
 }
 
 fn owned_root(selection: &Selection) -> Result<Utf8PathBuf> {
@@ -256,16 +294,29 @@ fn download(
     );
     let published = stage_path.join("published");
     state::private_directory(&published)?;
-    let content = published.join("content");
+    let content;
     if selection.model.huggingface.file.is_some() {
+        content = published.join("content");
         ensure!(
             downloaded.is_file(),
             "single-file download returned a directory"
         );
         fs_err::copy(&downloaded, &content)?;
     } else {
+        content = published.join("hub");
         ensure!(downloaded.is_dir(), "snapshot download returned a file");
-        copy_snapshot(&downloaded, &content, &cache)?;
+        let repository = hub_repository(&selection.model.huggingface.repo);
+        let snapshot = Utf8Path::new(&repository).join("snapshots").join(revision);
+        ensure!(
+            downloaded == cache.join(&snapshot),
+            "hf returned a different repository or revision"
+        );
+        let snapshot = content.join(snapshot);
+        copy_snapshot(&downloaded, &snapshot, &cache)?;
+        readable(&snapshot)?;
+        let refs = content.join(repository).join("refs");
+        state::private_directory(&refs)?;
+        state::atomic_write(&refs.join("main"), revision.as_bytes())?;
     }
     readable(&content)?;
     let mut files = BTreeMap::new();

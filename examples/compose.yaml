@@ -8,25 +8,17 @@ services:
     image: registry.example.org/vllm:replace-with-selected-version
     command:
       - --model
-      - /models/model
+      - example-org/replace-with-vllm-snapshot
       - --served-model-name
       - local-model
       - --host
       - 0.0.0.0
       - --port
       - "8000"
-    environment:
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
     devices:
       - nvidia.com/gpu=all
     ports:
       - "127.0.0.1:8000:8000"
-    volumes:
-      - type: bind
-        source: ${LMSERVE_MODEL_VLLM_PATH}
-        target: /models/model
-        read_only: true
     networks:
       default:
         aliases:

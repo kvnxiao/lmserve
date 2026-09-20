@@ -7,11 +7,22 @@ selects a build even when the service also has an image name. Updates record ima
 available source revision labels without recreating running containers. Local source checkouts
 remain user-owned.
 
-`update-models` resolves the configured Hugging Face revision through `hf`. It stages missing
-content, verifies readable files, publishes a completed artifact, and then removes eligible
-superseded content. Identical prepared content is reused. Failed downloads preserve the previous
-prepared revision; cleanup failures are reported separately and can be retried. Temporary storage
-must accommodate the download and published copy alongside the previous revision.
+`update-models` resolves the configured Hugging Face revision through `hf`; an omitted revision
+selects the current remote `main` commit. It stages missing content, verifies readable files,
+publishes a completed artifact, and then removes eligible superseded content. Identical prepared
+content is reused. Failed downloads preserve the previous prepared revision; cleanup failures are
+reported separately and can be retried. Temporary storage must accommodate the download and
+published copy alongside the previous revision.
+
+Repository artifacts contain a Hugging Face cache with `models--OWNER--REPOSITORY/snapshots/COMMIT/`
+and `refs/main` pointing to that exact commit. Preparing another revision creates a separate cache
+without changing the previous artifact's local ref. Files are stored once in the published cache.
+Single-file artifacts contain only the selected file.
+
+Before startup and before stopping a model for replacement, the CLI checks the recorded file sizes
+and readability, cache file set, sole snapshot revision, and exact `refs/main` contents. These
+checks do not hash model files. HF offline settings make missing required content fail locally
+instead of downloading it; startup does not resolve remote revisions.
 
 An active model blocks updates to its artifact source. Lifecycle work and model updates hold
 filesystem locks to prevent conflicting changes. Batch updates continue independent eligible entries

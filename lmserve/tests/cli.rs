@@ -59,8 +59,8 @@ mod tests {
                 directory,
                 config: json!({
                     "name": "fixture", "x-lmserve": {"version": 1}, "services": {
-                        "first": model("FIRST", "first-image", "first-repo"),
-                        "second": model("SECOND", "second-image", "second-repo"),
+                        "first": model("first-image", "first-repo"),
+                        "second": model("second-image", "second-repo"),
                         "webui": {"image": "webui-image", "volumes": ["webui-data:/data"]}
                     }, "volumes": {"webui-data": {}}
                 }),
@@ -159,9 +159,8 @@ mod tests {
         }
     }
 
-    fn model(variable: &str, image: &str, repo: &str) -> Value {
-        json!({"image": image, "volumes": [{"type": "bind", "source": format!("${{LMSERVE_MODEL_{variable}_PATH}}"), "target": "/model", "read_only": true}],
-            "environment": {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
+    fn model(image: &str, repo: &str) -> Value {
+        json!({"image": image, "volumes": [],
             "x-lmserve": {"huggingface": {"repo": format!("fixture/{repo}")}, "companions": ["webui"],
                 "readiness": {"url": "http://127.0.0.1:9/health", "timeout": "2s"}}})
     }
@@ -334,6 +333,10 @@ mod tests {
             json!({"type": "bind", "source": "${LMSERVE_MODEL_FIRST_PATH}", "target": "/writable", "read_only": false}),
         ] {
             let mut fixture = Fixture::new();
+            fixture.config["services"]["first"]["x-lmserve"]["huggingface"]["file"] =
+                json!("model.gguf");
+            fixture.config["services"]["first"]["volumes"] =
+                json!(["${LMSERVE_MODEL_FIRST_PATH}:/model:ro"]);
             fixture.config["services"]["first"]["volumes"]
                 .as_array_mut()
                 .expect("mounts")
@@ -503,11 +506,338 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires Hugging Face and Transformers; run just test-hf"]
+    fn huggingface_cache_contract() {
+        let python = std::env::var("LMSERVE_TEST_PYTHON").expect("run just test-hf");
+        let fixture = Fixture::new();
+        fixture.success(&["update-models", "first"]);
+        let state = fixture.state();
+        let cache = Path::new(
+            state["prepared"]["fixture/first"]["path"]
+                .as_str()
+                .expect("cache path"),
+        );
+        let mut pending = vec![cache.to_owned()];
+        let mut original_permissions = Vec::new();
+        while let Some(path) = pending.pop() {
+            if path.is_dir() {
+                pending.extend(
+                    fs_err::read_dir(&path)
+                        .expect("read cache directory")
+                        .map(|item| item.expect("read cache entry").path()),
+                );
+            }
+            let mut permissions = fs_err::metadata(&path)
+                .expect("read cache permissions")
+                .permissions();
+            original_permissions.push((path.clone(), permissions.clone()));
+            permissions.set_readonly(true);
+            fs_err::set_permissions(path, permissions).expect("make cache read-only");
+        }
+        let output = Command::new(python)
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/hf_cache.py"))
+            .env_clear()
+            .env("HOME", fixture.directory.path())
+            .env("HF_HUB_CACHE", cache)
+            .env("HF_HUB_OFFLINE", "1")
+            .env("TRANSFORMERS_OFFLINE", "1")
+            .env("HF_HOME", fixture.directory.path().join("hf-home"))
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .output();
+        for (path, permissions) in original_permissions {
+            fs_err::set_permissions(path, permissions).expect("restore cache permissions");
+        }
+        output
+            .expect("execute HF cache contract")
+            .assert()
+            .success();
+    }
+
+    #[test]
+    fn repository_cache_rejects_mount_and_environment_overrides() {
+        for mount in [
+            json!("./other:/lmserve/huggingface/hub:ro"),
+            json!("./other:/lmserve:ro"),
+            json!({"type": "volume", "source": "other", "target": "/lmserve/huggingface/hub/models--fixture--first-repo"}),
+            json!("./other:/lmserve/huggingface/./hub:ro"),
+            json!("./other:/lmserve/else/../huggingface/hub:ro"),
+            json!("${LMSERVE_MODEL_FIRST_PATH}:/model:ro"),
+        ] {
+            let mut fixture = Fixture::new();
+            fixture.config["services"]["first"]["volumes"] = json!([mount]);
+            fixture.write();
+            assert!(
+                !fixture.run(&["validate", "first"]).status.success(),
+                "accepted {mount}"
+            );
+        }
+        for (key, value) in [
+            ("HF_HUB_CACHE", "/elsewhere"),
+            ("HF_HUB_OFFLINE", "0"),
+            ("TRANSFORMERS_OFFLINE", "0"),
+            ("HUGGINGFACE_HUB_CACHE", "/elsewhere"),
+            ("TRANSFORMERS_CACHE", "/elsewhere"),
+            ("PYTORCH_TRANSFORMERS_CACHE", "/elsewhere"),
+            ("PYTORCH_PRETRAINED_BERT_CACHE", "/elsewhere"),
+        ] {
+            for environment in [json!({key: value}), json!([format!("{key}={value}")])] {
+                let mut fixture = Fixture::new();
+                fixture.config["services"]["first"]["environment"] = environment.clone();
+                fixture.write();
+                assert!(
+                    !fixture.run(&["validate", "first"]).status.success(),
+                    "accepted {environment}"
+                );
+            }
+            let mut fixture = Fixture::new();
+            fs_err::write(
+                fixture.directory.path().join("model.env"),
+                format!("{key}={value}\n"),
+            )
+            .expect("write conflicting environment");
+            fixture.config["services"]["first"]["env_file"] = json!(["model.env"]);
+            fixture.write();
+            assert!(
+                !fixture.run(&["validate", "first"]).status.success(),
+                "accepted {key} in env_file"
+            );
+        }
+    }
+
+    #[test]
+    fn repository_cache_rejects_overlapping_tmpfs_configs_and_secrets() {
+        for (kind, value) in [
+            ("tmpfs", json!("/lmserve/huggingface/hub:rw")),
+            ("tmpfs", json!(["/lmserve:size=4096"])),
+            (
+                "configs",
+                json!([{"source": "tuning", "target": "/lmserve/huggingface/hub/config.json"}]),
+            ),
+            (
+                "secrets",
+                json!([{"source": "token", "target": "/lmserve/huggingface/hub/token"}]),
+            ),
+        ] {
+            let mut fixture = Fixture::new();
+            fixture.config["services"]["first"][kind] = value.clone();
+            fixture.write();
+            assert!(
+                !fixture.run(&["validate", "first"]).status.success(),
+                "accepted {kind}: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn preparing_another_revision_keeps_each_cache_ref_independent() {
+        let mut fixture = Fixture::new();
+        fixture.config["services"]["second"]["x-lmserve"]["huggingface"]["repo"] =
+            json!("fixture/first-repo");
+        fixture.write();
+        fixture.success(&["update-models", "first"]);
+        fixture
+            .command(&["update-models", "second"])
+            .env("FAKE_REVISION", "b".repeat(40))
+            .assert()
+            .success();
+        let state = fixture.state();
+        for (entry, revision) in [
+            ("fixture/first", "a".repeat(40)),
+            ("fixture/second", "b".repeat(40)),
+        ] {
+            let cache = Path::new(
+                state["prepared"][entry]["path"]
+                    .as_str()
+                    .expect("cache path"),
+            );
+            assert_eq!(
+                fs_err::read_to_string(cache.join("models--fixture--first-repo/refs/main"))
+                    .expect("read local ref"),
+                revision
+            );
+        }
+    }
+
+    #[test]
+    fn damaged_cache_fails_before_stopping_the_active_model() {
+        for damage in [
+            "ref",
+            "missing",
+            "extra_revision",
+            "extra_file",
+            "escaping_link",
+        ] {
+            let mut fixture = Fixture::new();
+            let server = HealthServer::new();
+            server.configure(&mut fixture);
+            fixture.prepare();
+            fixture.wait(&fixture.success(&["start", "first"]));
+            let before = fixture.runtime();
+            let state = fixture.state();
+            let cache = Path::new(
+                state["prepared"]["fixture/second"]["path"]
+                    .as_str()
+                    .expect("cache path"),
+            );
+            let repository = cache.join("models--fixture--second-repo");
+            let weights = repository
+                .join("snapshots")
+                .join("a".repeat(40))
+                .join("model.bin");
+            match damage {
+                "ref" => {
+                    fs_err::write(repository.join("refs/main"), "b".repeat(40)).expect("alter ref");
+                }
+                "missing" => fs_err::remove_file(weights).expect("remove weights"),
+                "extra_revision" => {
+                    fs_err::create_dir(repository.join("snapshots").join("b".repeat(40)))
+                        .expect("add revision");
+                }
+                "extra_file" => fs_err::write(cache.join("extra"), "unexpected").expect("add file"),
+                "escaping_link" => {
+                    let outside = fixture.directory.path().join("outside");
+                    fs_err::write(&outside, "a".repeat(40)).expect("write external content");
+                    fs_err::remove_file(&weights).expect("remove weights");
+                    fs_err::os::unix::fs::symlink(outside, weights)
+                        .expect("replace with escaping link");
+                }
+                _ => panic!("unknown damage"),
+            }
+            assert!(
+                !fixture.run(&["switch", "second"]).status.success(),
+                "accepted {damage}"
+            );
+            assert_eq!(fixture.runtime(), before, "stopped model after {damage}");
+            fixture.wait(&fixture.success(&["stop", "first"]));
+        }
+    }
+
+    #[test]
+    fn configured_branch_prepares_a_frozen_local_main_without_ref_paths() {
+        for revision in [
+            "release/candidate",
+            "../branch",
+            "a tag",
+            "b".repeat(40).as_str(),
+        ] {
+            let mut fixture = Fixture::new();
+            fixture.config["services"]["first"]["x-lmserve"]["huggingface"]["revision"] =
+                json!(revision);
+            fixture.write();
+            fixture.success(&["update-models", "first"]);
+            let state = fixture.state();
+            let cache = Path::new(
+                state["prepared"]["fixture/first"]["path"]
+                    .as_str()
+                    .expect("cache path"),
+            );
+            assert_eq!(
+                fs_err::read_to_string(cache.join("models--fixture--first-repo/refs/main"))
+                    .expect("read ref"),
+                "a".repeat(40)
+            );
+            let calls = fixture.calls();
+            assert!(
+                calls
+                    .iter()
+                    .any(|args| args.get(1).is_some_and(|arg| arg == "models")
+                        && args.windows(2).any(|pair| pair == ["--revision", revision]))
+            );
+            assert!(calls.iter().any(|args| {
+                args.get(1).is_some_and(|arg| arg == "download")
+                    && args
+                        .windows(2)
+                        .any(|pair| pair == ["--revision", "a".repeat(40).as_str()])
+            }));
+        }
+    }
+
+    #[test]
+    fn repository_start_uses_prepared_cache_after_remote_branch_moves() {
+        let mut fixture = Fixture::new();
+        let server = HealthServer::new();
+        server.configure(&mut fixture);
+        fixture.config["services"]["first"]["volumes"] = json!([]);
+        fixture.config["services"]["first"]["environment"] = json!({});
+        fixture.config["services"]["first"]["command"] = json!([
+            "--model",
+            "fixture/first-repo",
+            "--served-model-name",
+            "local-model"
+        ]);
+        fixture.write();
+        fixture.success(&["update-images", "first"]);
+        fixture.success(&["update-models", "first"]);
+        let before = fixture.state()["prepared"]["fixture/first"].clone();
+        let hf_calls = fixture
+            .calls()
+            .into_iter()
+            .filter(|args| args[0] == "hf")
+            .count();
+        let accepted = fixture
+            .command(&["start", "first"])
+            .env("FAKE_REVISION", "b".repeat(40))
+            .env("FAKE_DOWNLOAD_FAIL", "1")
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        assert_eq!(fixture.wait(&accepted)["phase"], "ready");
+        let definition: Value = serde_json::from_slice(
+            &fs_err::read(fixture.directory.path().join("definition-first.json"))
+                .expect("read model definition"),
+        )
+        .expect("parse model definition");
+        assert_eq!(
+            definition["environment"]["HF_HUB_CACHE"],
+            "/lmserve/huggingface/hub"
+        );
+        assert_eq!(definition["environment"]["HF_HUB_OFFLINE"], "1");
+        assert_eq!(definition["environment"]["TRANSFORMERS_OFFLINE"], "1");
+        assert_eq!(
+            definition["command"],
+            fixture.config["services"]["first"]["command"]
+        );
+        assert_eq!(
+            definition["volumes"],
+            json!([{
+                "type": "bind", "source": before["path"],
+                "target": "/lmserve/huggingface/hub", "read_only": true
+            }])
+        );
+        let cache = Path::new(before["path"].as_str().expect("cache path"));
+        assert_eq!(
+            fs_err::read_to_string(cache.join("models--fixture--first-repo/refs/main"))
+                .expect("read frozen ref"),
+            "a".repeat(40)
+        );
+        assert_eq!(
+            fs_err::read_to_string(cache.join(format!(
+                "models--fixture--first-repo/snapshots/{}/model.bin",
+                "a".repeat(40)
+            )))
+            .expect("read prepared weights"),
+            "a".repeat(40)
+        );
+        assert_eq!(
+            fixture
+                .calls()
+                .into_iter()
+                .filter(|args| args[0] == "hf")
+                .count(),
+            hf_calls
+        );
+        fixture.wait(&fixture.success(&["stop", "first"]));
+    }
+
+    #[test]
     fn snapshot_links_are_materialized_and_failed_updates_preserve_content() {
         let fixture = Fixture::new();
         fixture.success(&["update-models", "first"]);
         let before = fixture.state()["prepared"]["fixture/first"].clone();
-        let path = Path::new(before["path"].as_str().expect("prepared path"));
+        let path = Path::new(before["path"].as_str().expect("prepared path"))
+            .join("models--fixture--first-repo/snapshots")
+            .join("a".repeat(40));
         assert_eq!(
             fs_err::read_to_string(path.join("model.bin")).expect("read mounted artifact"),
             "a".repeat(40)
@@ -528,6 +858,26 @@ mod tests {
         assert!(path.join("model.bin").exists());
         assert!(!String::from_utf8_lossy(&output.stdout).contains("must-not-leak"));
         assert!(!String::from_utf8_lossy(&output.stderr).contains("must-not-leak"));
+    }
+
+    #[test]
+    fn invalid_downloads_preserve_the_previous_cache() {
+        for (key, value) in [
+            ("FAKE_EMPTY_SNAPSHOT", "1".to_owned()),
+            ("FAKE_SNAPSHOT_REVISION", "c".repeat(40)),
+        ] {
+            let fixture = Fixture::new();
+            fixture.success(&["update-models", "first"]);
+            let before = fixture.state()["prepared"]["fixture/first"].clone();
+            fixture
+                .command(&["update-models", "first"])
+                .env("FAKE_REVISION", "b".repeat(40))
+                .env(key, value)
+                .assert()
+                .failure();
+            assert_eq!(fixture.state()["prepared"]["fixture/first"], before);
+            assert!(Path::new(before["path"].as_str().expect("previous cache")).exists());
+        }
     }
 
     #[test]
@@ -956,10 +1306,39 @@ mod tests {
     }
 
     #[test]
+    fn single_file_preparation_keeps_its_content_identity() {
+        let mut fixture = Fixture::new();
+        fixture.config["services"]["first"]["x-lmserve"]["huggingface"]["file"] =
+            json!("model.gguf");
+        fixture.config["services"]["first"]["volumes"] =
+            json!(["${LMSERVE_MODEL_FIRST_PATH}:/model:ro"]);
+        fixture.write();
+        fixture.success(&["update-models", "first"]);
+        let state = fixture.state();
+        let owned = Path::new(
+            state["prepared"]["fixture/first"]["owned_directory"]
+                .as_str()
+                .expect("owned directory"),
+        );
+        assert_eq!(
+            owned.file_name().expect("content identity"),
+            "3d9323983e9ae310893cde3ec10b8b33cdef6b46002fc410016a025be2c88c92"
+        );
+        fixture
+            .command(&["update-models", "first"])
+            .env("FAKE_DOWNLOAD_FAIL", "1")
+            .assert()
+            .success();
+        assert_eq!(fixture.state()["prepared"], state["prepared"]);
+    }
+
+    #[test]
     fn single_file_artifact_and_source_build_use_explicit_targets() {
         let mut fixture = Fixture::new();
         fixture.config["services"]["first"]["x-lmserve"]["huggingface"]["file"] =
             json!("weights/model file.gguf");
+        fixture.config["services"]["first"]["volumes"] =
+            json!(["${LMSERVE_MODEL_FIRST_PATH}:/model:ro"]);
         fixture.config["services"]["first"]["build"] = json!({"context": "https://example.invalid/engine.git#pinned", "dockerfile": "Dockerfile"});
         fixture.write();
         fixture.success(&["update-models", "first"]);
@@ -1232,11 +1611,22 @@ mod tests {
                     .last()
                     .is_some_and(|arg| arg == "https://example.invalid/engine.git#fixed-ref")
         }));
-        assert!(
-            creates
-                .iter()
-                .any(|args| args.iter().any(|arg| arg.contains("/model:ro")))
-        );
+        assert!(creates.iter().any(|args| {
+            args.iter()
+                .any(|arg| arg.contains("/lmserve/huggingface/hub:ro"))
+        }));
+        for value in [
+            "HF_HUB_CACHE=/lmserve/huggingface/hub",
+            "HF_HUB_OFFLINE=1",
+            "TRANSFORMERS_OFFLINE=1",
+        ] {
+            assert!(
+                creates
+                    .iter()
+                    .any(|args| args.iter().any(|arg| arg == value)),
+                "missing {value}"
+            );
+        }
         assert!(
             creates.iter().any(|args| {
                 args.iter().any(|arg| {

@@ -16,27 +16,63 @@ Project-level `x-lmserve` accepts:
 
 Model service `x-lmserve` accepts:
 
-| Field                  | Contract                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| `huggingface.repo`     | Required repository identifier                                               |
-| `huggingface.revision` | Optional branch, tag, or full commit; omitted selects the repository default |
-| `huggingface.file`     | Optional repository-relative file; omitted downloads a snapshot              |
-| `companions`           | Optional array of non-model service names; defaults to empty                 |
-| `readiness.url`        | Required host-reachable HTTP(S) URL without embedded credentials             |
-| `readiness.timeout`    | Positive duration, for example `900s`; defaults to `900s`                    |
+| Field                  | Contract                                                               |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `huggingface.repo`     | Required repository identifier                                         |
+| `huggingface.revision` | Optional branch, tag, or full commit; omitted selects `main`           |
+| `huggingface.file`     | Optional repository-relative file; omitted prepares a repository cache |
+| `companions`           | Optional array of non-model service names; defaults to empty           |
+| `readiness.url`        | Required host-reachable HTTP(S) URL without embedded credentials       |
+| `readiness.timeout`    | Positive duration, for example `900s`; defaults to `900s`              |
 
 Unknown extension fields and unsupported schema versions are errors. Model files cannot use absolute
 paths or parent traversal. Required dependencies remain required when also listed as companions.
 
-For each model, the CLI supplies `LMSERVE_MODEL_<NORMALIZED_SERVICE>_PATH`. Normalization uppercases
-ASCII and replaces `-` and `.` with `_`; conflicting names are rejected. Mount the corresponding
-variable exactly once as a read-only bind mount. The selected path is a prepared snapshot directory
-or file. Configure the engine to load that container path offline. Do not define reserved variables
-in the host environment, `.env`, service environment, or service environment files.
+## Repository models
+
+When `huggingface.file` is omitted, configure the engine with the same repository ID as
+`huggingface.repo`. For example, a vLLM tuning YAML can contain:
+
+```yaml
+model: cyankiwi/Qwen3.8-27B-AWQ-INT4
+served-model-name: qwen-3.8-27b
+```
+
+The CLI mounts the selected prepared cache read-only at `/lmserve/huggingface/hub` and supplies
+`HF_HUB_CACHE=/lmserve/huggingface/hub`, `HF_HUB_OFFLINE=1`, and `TRANSFORMERS_OFFLINE=1`. No
+model-path mount or per-model revision variable is needed. API model naming remains independent.
+Overlapping mounts, conflicting environment values, and alternate HF cache variables are rejected.
+Service environment files cannot define these managed cache or offline variables.
+
+Select a source branch, tag, or commit in `x-lmserve.huggingface.revision`. Preparation records its
+exact commit and writes a private `refs/main` pointing to that commit. Leave vLLM's `revision`,
+`tokenizer-revision`, and `code-revision` unset so repository lookup uses this local `main`. Leave
+`download-dir` unset so vLLM writes its download locks outside the read-only cache. Other source
+branch names are not published as cache refs. A later remote branch update does not change serving
+content; run `update-models` to prepare it explicitly.
+
+The CLI does not inspect engine commands or tuning YAML for conflicting options. Tokenizers and
+custom code in separate repositories are not prepared. Keep writable runtime caches, including
+`HF_MODULES_CACHE` and compiler caches, outside the read-only model cache.
+
+To migrate a standalone repository mount, remove its `LMSERVE_MODEL_*_PATH` volume, change the
+engine's model path to the repository ID, and remove engine revision/download-directory overrides.
+Remove redundant HF cache and offline settings from Compose and its environment files. Stop the
+model and wait for `lmserve status ENTRY` to report `stopped`, then run `lmserve update-models
+ENTRY` and start it again. Existing standalone repository preparations must be replaced; startup
+does not convert them.
+
+## Single-file models
+
+When `huggingface.file` is set, mount `LMSERVE_MODEL_<NORMALIZED_SERVICE>_PATH` exactly once as a
+read-only bind mount and configure the engine to load that container path offline. This supports
+NInfer single-file artifacts. Normalization uppercases ASCII and replaces `-` and `.` with `_`;
+conflicting names are rejected. Do not define reserved model variables in the host environment,
+`.env`, service environment, or service environment files.
 
 Inactive models may remain unprepared. Validation and preparation use placeholder paths where
-necessary; startup requires the selected model's real prepared path. Snapshots expose regular files
-within the mount; single-file artifacts resolve downloaded snapshot links before publication.
+necessary; startup requires the selected model's prepared content. Downloaded snapshot links are
+materialized as regular files before publication for both repository and single-file models.
 
 ## Commands
 

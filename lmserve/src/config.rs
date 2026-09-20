@@ -9,8 +9,22 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
+use serde_json::json;
 use std::collections::BTreeSet;
 use std::time::Duration;
+
+const HUB_CACHE: &str = "/lmserve/huggingface/hub";
+const HUB_ENVIRONMENT: [(&str, &str); 3] = [
+    ("HF_HUB_CACHE", HUB_CACHE),
+    ("HF_HUB_OFFLINE", "1"),
+    ("TRANSFORMERS_OFFLINE", "1"),
+];
+const CACHE_ALIASES: [&str; 4] = [
+    "HUGGINGFACE_HUB_CACHE",
+    "TRANSFORMERS_CACHE",
+    "PYTORCH_TRANSFORMERS_CACHE",
+    "PYTORCH_PRETRAINED_BERT_CACHE",
+];
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -64,7 +78,6 @@ pub(crate) struct Selection {
     pub(crate) model: Model,
     pub(crate) services: Vec<String>,
     pub(crate) required: BTreeSet<String>,
-    pub(crate) model_path: Utf8PathBuf,
     pub(crate) sources: std::collections::BTreeMap<String, Option<Source>>,
 }
 
@@ -238,7 +251,6 @@ impl Project {
             .context("provider removed selected model")?;
         let model = model_metadata(rendered_model)?;
         validate_model(&model)?;
-        validate_mount(rendered_model, &model_path)?;
         let (selected, required) = select_services(entry, &model, rendered_services)?;
         let reserved_variables = self.models.iter().map(|name| variable(name)).collect();
         let selected_services = selected
@@ -249,7 +261,11 @@ impl Project {
                     .context("missing selected service")?;
                 validate_service(name, service)?;
                 check_service_environment(service, &self.directory, &reserved_variables)?;
-                Ok((name.clone(), service.clone()))
+                let mut service = service.clone();
+                if name == entry {
+                    mount_model(&mut service, &model, &model_path, &self.directory)?;
+                }
+                Ok((name.clone(), service))
             })
             .collect::<Result<Map<_, _>>>()?;
         set(&mut document, "services", Value::Object(selected_services))?;
@@ -262,10 +278,113 @@ impl Project {
             model,
             services: selected,
             required,
-            model_path,
             sources,
         })
     }
+}
+
+fn mount_model(
+    service: &mut Value,
+    model: &Model,
+    path: &Utf8Path,
+    directory: &Utf8Path,
+) -> Result<()> {
+    if model.huggingface.file.is_some() {
+        return validate_mount(service, path);
+    }
+    let mut mounts = match field(service, "volumes") {
+        Value::Null => Vec::new(),
+        Value::Array(mounts) => mounts.clone(),
+        _ => anyhow::bail!("service volumes must be a list"),
+    };
+    for mount in &mounts {
+        let (source, target) = if let Some(short) = mount.as_str() {
+            let mut parts = short.split(':');
+            let first = parts.next().unwrap_or("");
+            parts.next().map_or(("", first), |target| (first, target))
+        } else {
+            (
+                field(mount, "source").as_str().unwrap_or(""),
+                field(mount, "target")
+                    .as_str()
+                    .context("mount requires target")?,
+            )
+        };
+        ensure!(
+            source != path.as_str(),
+            "repository models use an automatic Hugging Face cache mount; remove the model PATH mount"
+        );
+        validate_cache_target(target)?;
+    }
+    for kind in ["tmpfs", "configs", "secrets"] {
+        let value = field(service, kind);
+        let entries = value.as_array().map_or_else(
+            || value.as_str().map_or_else(Vec::new, |_| vec![value]),
+            |items| items.iter().collect(),
+        );
+        for entry in entries {
+            let target = field(entry, "target").as_str().or_else(|| entry.as_str());
+            if let Some(target) = target.filter(|target| target.starts_with('/')) {
+                validate_cache_target(target.split(':').next().unwrap_or(target))?;
+            }
+        }
+    }
+    let reserved = HUB_ENVIRONMENT
+        .iter()
+        .map(|(key, _)| (*key).to_owned())
+        .chain(CACHE_ALIASES.iter().map(|key| (*key).to_owned()))
+        .collect();
+    let mut environment = match field(service, "environment") {
+        Value::Null => Map::new(),
+        Value::Object(environment) => environment.clone(),
+        Value::Array(environment) => environment
+            .iter()
+            .map(|item| {
+                let item = item.as_str().context("invalid service environment")?;
+                let (key, value) = item
+                    .split_once('=')
+                    .map_or((item, Value::Null), |(key, value)| (key, json!(value)));
+                Ok((key.to_owned(), value))
+            })
+            .collect::<Result<Map<_, _>>>()?,
+        _ => anyhow::bail!("invalid service environment"),
+    };
+    for key in CACHE_ALIASES {
+        ensure!(
+            !environment.contains_key(key),
+            "{key} conflicts with the managed Hugging Face cache"
+        );
+    }
+    for (key, value) in HUB_ENVIRONMENT {
+        ensure!(
+            environment
+                .get(key)
+                .is_none_or(|existing| existing.as_str() == Some(value)),
+            "{key} conflicts with the managed Hugging Face cache"
+        );
+        environment.insert(key.to_owned(), json!(value));
+    }
+    let without_environment = json!({"env_file": field(service, "env_file")});
+    check_service_environment(&without_environment, directory, &reserved)?;
+    mounts.push(json!({"type": "bind", "source": path, "target": HUB_CACHE, "read_only": true}));
+    set(service, "volumes", json!(mounts))?;
+    set(service, "environment", Value::Object(environment))
+}
+
+fn validate_cache_target(target: &str) -> Result<()> {
+    let target = Utf8Path::new(target);
+    ensure!(
+        target.is_absolute()
+            && !target
+                .components()
+                .any(|part| matches!(part, camino::Utf8Component::ParentDir)),
+        "mount target must be absolute without parent traversal"
+    );
+    ensure!(
+        !target.starts_with(HUB_CACHE) && !Utf8Path::new(HUB_CACHE).starts_with(target),
+        "mount overlaps the managed Hugging Face cache"
+    );
+    Ok(())
 }
 
 fn select_services(
