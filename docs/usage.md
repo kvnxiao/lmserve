@@ -2,8 +2,8 @@
 
 Use one Compose file with a stable, explicit lowercase project `name`. A service with `x-lmserve`
 metadata is a model entry, addressed by its service name. Ordinary Compose fields define images,
-builds, commands, devices, ports, storage, and dependencies. `podman-compose` 1.5.0 renders those
-fields; `lmserve` validates its extension metadata and selected deployment.
+builds, commands, devices, ports, storage, and dependencies. `podman-compose` 1.5.0 or newer renders
+those fields; `lmserve` validates its extension metadata and selected deployment.
 
 ## Extension schema
 

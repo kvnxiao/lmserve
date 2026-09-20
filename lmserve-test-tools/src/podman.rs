@@ -152,10 +152,11 @@ fn create(fixture: &mut Fixture, args: &[&str]) -> Result<()> {
             labels.insert(key.to_owned(), value.to_owned());
         }
     }
-    ensure!(
-        after(args, "--pull")? == "never",
-        "startup cannot pull images"
-    );
+    let pull_policy = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull="))
+        .map_or_else(|| after(args, "--pull"), Ok)?;
+    ensure!(pull_policy == "never", "startup cannot pull images");
     ensure!(
         !fixture
             .state

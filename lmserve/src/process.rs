@@ -163,6 +163,8 @@ fn escape_interpolation(value: &mut Value) {
 }
 
 pub(crate) fn provider_version(provider: &str) -> Result<()> {
+    const MINIMUM_VERSION: [u64; 3] = [1, 5, 0];
+
     let bytes = output(
         Command::new(provider).arg("--version"),
         None,
@@ -172,8 +174,28 @@ pub(crate) fn provider_version(provider: &str) -> Result<()> {
     anyhow::ensure!(
         version
             .lines()
-            .any(|line| line.trim() == "podman-compose version 1.5.0"),
-        "unsupported provider: select podman-compose 1.5.0 explicitly"
+            .filter_map(|line| line.trim().strip_prefix("podman-compose version "))
+            .any(|version| {
+                let mut parts = version.split('.');
+                let mut parsed = [0_u64; 3];
+                for component in &mut parsed {
+                    let Some(part) = parts.next() else {
+                        return false;
+                    };
+                    if !part.bytes().all(|byte| byte.is_ascii_digit()) {
+                        return false;
+                    }
+                    let Ok(value) = part.parse::<u64>() else {
+                        return false;
+                    };
+                    *component = value;
+                }
+                parts.next().is_none() && parsed >= MINIMUM_VERSION
+            }),
+        "unsupported provider: select podman-compose {}.{}.{} or newer explicitly",
+        MINIMUM_VERSION[0],
+        MINIMUM_VERSION[1],
+        MINIMUM_VERSION[2]
     );
     Ok(())
 }

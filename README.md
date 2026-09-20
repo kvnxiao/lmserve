@@ -12,11 +12,11 @@ serving and Linux/WSL2 GPU deployments have not been verified.
 ## Use
 
 Install the binary with `cargo install --path lmserve --locked`. Serving requires rootless Podman
-**4.6 or newer**, `podman-compose` **1.5.0**, and prepared images and model files. Model preparation
-additionally requires `hf`; authenticate with `hf` separately when the selected repository requires
-access. NVIDIA deployments require a working host driver and Container Device Interface (CDI)
-configuration. `nvidia-ctk` generates and inspects CDI devices. Selected image builds may require
-additional provider or build-context tools.
+**4.6 or newer**, `podman-compose` **1.5.0 or newer**, and prepared images and model files. Model
+preparation additionally requires `hf`; authenticate with `hf` separately when the selected
+repository requires access. NVIDIA deployments require a working host driver and Container Device
+Interface (CDI) configuration. `nvidia-ctk` generates and inspects CDI devices. Selected image
+builds may require additional provider or build-context tools.
 
 Copy and customize [the Compose example](examples/compose.yaml) before running these commands from
 its directory. Its image tags, model repositories, source ref, and NInfer command are placeholders
@@ -41,8 +41,9 @@ Updates run in the foreground; lifecycle commands do not download models, pull i
 images.
 
 The global `--file PATH` selects a Compose file, defaulting to `./compose.yaml`. The global
-`--provider PATH` selects the provider executable, defaulting to `podman-compose`; other provider
-versions are rejected. Relative Compose paths resolve from the selected file's directory.
+`--provider PATH` selects the provider executable, defaulting to `podman-compose`. The provider must
+report a numeric `major.minor.patch` release of 1.5.0 or newer. Relative Compose paths resolve from
+the selected file's directory.
 
 See [configuration and command reference](docs/usage.md),
 [state, storage, and recovery](docs/operations.md), and [example setup](examples/README.md).
@@ -85,7 +86,7 @@ slicing, and explicit panic; `unwrap` remains denied.
 - `just doc` builds documentation with warnings treated as errors.
 - `just test` runs the workspace tests, including any doctests.
 - `just test-provider` runs the provider contract test with externally installed `podman-compose`
-  1.5.0 and a fake Podman executable. It resolves the provider from `PATH`; set
+  1.5.0 or newer and a fake Podman executable. It resolves the provider from `PATH`; set
   `LMSERVE_TEST_PROVIDER` to select an explicit executable path. It does not install tools, run
   containers, or use a GPU.
 - `just dependencies` checks advisories and unused dependencies.

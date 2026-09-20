@@ -462,15 +462,44 @@ mod tests {
     }
 
     #[test]
-    fn provider_version_is_explicit_and_checked() {
+    fn provider_version_accepts_minimum_and_newer_releases() {
         let fixture = Fixture::new();
-        let output = fixture
-            .command(&["validate"])
-            .env("FAKE_PROVIDER_VERSION", "0.0.1")
-            .output()
-            .expect("run unsupported provider");
-        assert!(!output.status.success());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported provider"));
+        for version in ["1.5.0", "1.5.1", "1.6.0", "1.10.0", "2.0.0"] {
+            fixture
+                .command(&["validate"])
+                .env("FAKE_PROVIDER_VERSION", version)
+                .assert()
+                .success();
+        }
+    }
+
+    #[test]
+    fn provider_version_rejects_older_and_malformed_releases() {
+        let fixture = Fixture::new();
+        for version in [
+            "0.0.1",
+            "0.99.0",
+            "1.4.9",
+            "",
+            "unknown",
+            "1.5",
+            "1.5.0.1",
+            "1.5.0rc1",
+            "1.6.0-dev",
+            "1.6.x",
+            "-1.6.0",
+            "+1.6.0",
+            "1.6.0 extra",
+            "18446744073709551616.0.0",
+        ] {
+            let output = fixture
+                .command(&["validate"])
+                .env("FAKE_PROVIDER_VERSION", version)
+                .output()
+                .expect("run unsupported provider");
+            assert!(!output.status.success(), "accepted version {version:?}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("unsupported provider"));
+        }
     }
 
     #[test]
@@ -1142,7 +1171,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires externally installed podman-compose 1.5.0; Podman remains fake"]
+    #[ignore = "requires externally installed podman-compose >= 1.5.0; Podman remains fake"]
     fn provider_contract() {
         let selected =
             std::env::var_os("LMSERVE_TEST_PROVIDER").unwrap_or_else(|| "podman-compose".into());
@@ -1153,7 +1182,7 @@ mod tests {
             std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
                 .map(|directory| directory.join(selected))
                 .find(|path| path.is_file())
-                .expect("install podman-compose 1.5.0 or set LMSERVE_TEST_PROVIDER to its absolute path")
+                .expect("install podman-compose >= 1.5.0 or set LMSERVE_TEST_PROVIDER to its absolute path")
         };
         let provider = fs_err::canonicalize(provider).expect("resolve installed provider path");
         let provider = provider.to_str().expect("provider path is UTF-8");
@@ -1174,10 +1203,8 @@ mod tests {
         fixture.success(&["--provider", provider, "update-models", "first"]);
         fixture.success(&["--provider", provider, "update-images", "first"]);
         fixture.success(&["--provider", provider, "update-images", "second"]);
-        assert_eq!(
-            fixture.wait(&fixture.success(&["--provider", provider, "start", "first"]))["phase"],
-            "ready"
-        );
+        let operation = fixture.wait(&fixture.success(&["--provider", provider, "start", "first"]));
+        assert_eq!(operation["phase"], "ready", "{operation}");
         let calls = fixture.calls();
         let creates: Vec<_> = calls
             .iter()
@@ -1210,10 +1237,15 @@ mod tests {
                 .iter()
                 .any(|args| args.iter().any(|arg| arg.contains("/model:ro")))
         );
-        assert!(creates.iter().any(|args| {
-            args.iter()
-                .any(|arg| arg.contains("fixture_webui-data:/data"))
-        }));
+        assert!(
+            creates.iter().any(|args| {
+                args.iter().any(|arg| {
+                    arg.contains("fixture_webui-data:/data")
+                        || arg == "type=volume,source=fixture_webui-data,destination=/data"
+                })
+            }),
+            "{creates:?}"
+        );
         assert!(
             calls
                 .iter()
