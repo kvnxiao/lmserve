@@ -213,7 +213,7 @@ extern crate alloc;
 ```toml
 [features]
 default = ["std"]
-std = ["alloc"]        # tier features: std ⊃ alloc ⊃ core
+std = ["alloc"] # tier features: std ⊃ alloc ⊃ core
 alloc = []
 derive = ["dep:my_derive"] # optional proc-macro, off by default
 

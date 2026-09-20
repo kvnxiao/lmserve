@@ -116,7 +116,7 @@ manifest.
 
 ```toml
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs_mycrate)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(docsrs_mycrate)"] }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -248,8 +248,8 @@ serialize or bound them.
 serial = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary(file_watching)'
-test-group = 'serial'
+filter = "binary(file_watching)"
+test-group = "serial"
 slow-timeout = { period = "1s", terminate-after = 60 }
 ```
 

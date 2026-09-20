@@ -27,7 +27,7 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy
           rustup toolchain install nightly --profile minimal --component rustfmt
       - name: Install development tools
-        run: cargo +stable install --locked just cargo-audit cargo-machete
+        run: cargo +stable install --locked just cargo-audit cargo-machete dprint
       - name: Verify workspace
         run: |
           just --list

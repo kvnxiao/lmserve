@@ -59,7 +59,7 @@ root:
 ```sh
 rustup toolchain install stable --profile minimal --component clippy
 rustup toolchain install nightly --profile minimal --component rustfmt
-cargo +stable install --locked cargo-audit cargo-machete
+cargo +stable install --locked cargo-audit cargo-machete dprint
 just --list
 just verify
 just check-msrv lmserve
@@ -74,11 +74,19 @@ Nightly rustfmt enforces one imported item per `use` statement, one sorted impor
 group, comment normalization, and Unix newlines. Configure editors to invoke
 `rustup run nightly rustfmt`.
 
+[dprint](https://dprint.dev/plugins/) formats Markdown, YAML, JSON/JSONC, TOML,
+and HTML/XML markup, including repository instructions, skills, and workflows.
+`dprint.json` preserves existing Markdown paragraph wrapping and excludes the
+local, untracked `SPEC.md`, generated Cargo lockfile, and build output. Run
+`dprint config update` to update the formatter plugins, then `just fmt` to apply
+their formatting.
+
 The workspace manifest contains the Rust, Clippy, and rustdoc lint policy. Printing
 requires a scoped expectation in CLI output functions. Test contexts permit
 `expect`, printing, indexing, slicing, and explicit panic; `unwrap` remains denied.
 
-- `just fix` applies Clippy fixes, formats Rust source, and runs strict lint checks.
+- `just fmt` formats Rust source, markup, and configuration files.
+- `just fix` applies Clippy fixes, runs `just fmt`, and runs strict lint checks.
 - `just lint` checks formatting, Clippy, and rustdoc warnings.
 - `just doc` builds documentation with warnings treated as errors.
 - `just test` runs the workspace tests, including any doctests.

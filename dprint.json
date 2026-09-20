@@ -1,0 +1,15 @@
+{
+  "lineWidth": 100,
+  "markdown": {
+    "textWrap": "maintain"
+  },
+  "includes": ["**/*"],
+  "excludes": ["SPEC.md", "Cargo.lock", "**/target", "**/node_modules"],
+  "plugins": [
+    "npm:@dprint/markdown@0.24.0",
+    "npm:@dprint/json@0.24.0",
+    "npm:@dprint/toml@0.8.0",
+    "npm:dprint-plugin-yaml@0.6.0",
+    "npm:dprint-plugin-markup@0.27.3"
+  ]
+}

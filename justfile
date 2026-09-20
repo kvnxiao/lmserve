@@ -3,12 +3,17 @@ clippy_scope := "--workspace --all-targets --all-features --locked"
 default:
     @just --list
 
+fmt:
+    cargo +nightly fmt --all
+    dprint fmt
+
 fix:
     cargo +stable clippy --fix {{clippy_scope}} --allow-dirty --allow-staged
-    cargo +nightly fmt --all
+    just fmt
     just lint
 
 lint:
+    dprint check
     cargo +nightly fmt --all -- --check
     cargo +stable clippy {{clippy_scope}} -- -D warnings
     just doc

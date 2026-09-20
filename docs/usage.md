@@ -10,21 +10,21 @@ extension metadata and selected deployment.
 
 Project-level `x-lmserve` accepts:
 
-| Field | Contract |
-| --- | --- |
-| `version` | Required integer `1` |
+| Field             | Contract                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `version`         | Required integer `1`                                                                                                   |
 | `model-directory` | Optional absolute path after interpolation; defaults to `$XDG_CACHE_HOME/lmserve/models`, or `~/.cache/lmserve/models` |
 
 Model service `x-lmserve` accepts:
 
-| Field | Contract |
-| --- | --- |
-| `huggingface.repo` | Required repository identifier |
+| Field                  | Contract                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `huggingface.repo`     | Required repository identifier                                               |
 | `huggingface.revision` | Optional branch, tag, or full commit; omitted selects the repository default |
-| `huggingface.file` | Optional repository-relative file; omitted downloads a snapshot |
-| `companions` | Optional array of non-model service names; defaults to empty |
-| `readiness.url` | Required host-reachable HTTP(S) URL without embedded credentials |
-| `readiness.timeout` | Positive duration, for example `900s`; defaults to `900s` |
+| `huggingface.file`     | Optional repository-relative file; omitted downloads a snapshot              |
+| `companions`           | Optional array of non-model service names; defaults to empty                 |
+| `readiness.url`        | Required host-reachable HTTP(S) URL without embedded credentials             |
+| `readiness.timeout`    | Positive duration, for example `900s`; defaults to `900s`                    |
 
 Unknown extension fields and unsupported schema versions are errors. Model files
 cannot use absolute paths or parent traversal. Required dependencies remain
@@ -44,22 +44,22 @@ downloaded snapshot links before publication.
 
 ## Commands
 
-| Command | Behavior |
-| --- | --- |
-| `list` | List configured entries and inspect recorded deployments |
-| `validate [ENTRY]` | Validate one entry or all entries through the selected provider |
-| `plan ACTION ENTRY` | Preview `start`, `stop`, `restart`, `switch`, `update-images`, or `update-models` |
-| `plan update-images --all` / `plan update-models --all` | Preview all preparation targets |
-| `update-images ENTRY` / `update-images --all` | Pull or build selected images; record their local identities |
-| `update-models ENTRY` / `update-models --all` | Resolve, download, verify, and publish artifacts; clean superseded owned content |
-| `start ENTRY` | Accept startup, or report an already active entry's operation |
-| `stop ENTRY` | Accept recorded group shutdown or cancel startup |
-| `restart ENTRY` | Replace the entry's serving session from current configuration |
-| `switch ENTRY` | Stop the active model before starting the selected entry |
-| `status [ENTRY]` | Inspect components, current model health, and operation outcomes |
-| `logs ENTRY [--service SERVICE] [--follow]` | Read logs from a recorded group member |
-| `health ENTRY` | Succeed only when the recorded model runs and its endpoint returns HTTP success |
-| `cdi [--output PATH]` | Generate CDI through `nvidia-ctk` and atomically publish the output |
+| Command                                                 | Behavior                                                                          |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `list`                                                  | List configured entries and inspect recorded deployments                          |
+| `validate [ENTRY]`                                      | Validate one entry or all entries through the selected provider                   |
+| `plan ACTION ENTRY`                                     | Preview `start`, `stop`, `restart`, `switch`, `update-images`, or `update-models` |
+| `plan update-images --all` / `plan update-models --all` | Preview all preparation targets                                                   |
+| `update-images ENTRY` / `update-images --all`           | Pull or build selected images; record their local identities                      |
+| `update-models ENTRY` / `update-models --all`           | Resolve, download, verify, and publish artifacts; clean superseded owned content  |
+| `start ENTRY`                                           | Accept startup, or report an already active entry's operation                     |
+| `stop ENTRY`                                            | Accept recorded group shutdown or cancel startup                                  |
+| `restart ENTRY`                                         | Replace the entry's serving session from current configuration                    |
+| `switch ENTRY`                                          | Stop the active model before starting the selected entry                          |
+| `status [ENTRY]`                                        | Inspect components, current model health, and operation outcomes                  |
+| `logs ENTRY [--service SERVICE] [--follow]`             | Read logs from a recorded group member                                            |
+| `health ENTRY`                                          | Succeed only when the recorded model runs and its endpoint returns HTTP success   |
+| `cdi [--output PATH]`                                   | Generate CDI through `nvidia-ctk` and atomically publish the output               |
 
 `validate` and `plan` do not prepare dependencies, create containers, or write
 managed state. Validation requires the provider but does not require a GPU. Plans

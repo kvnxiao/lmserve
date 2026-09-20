@@ -10,10 +10,10 @@ Before editing or reviewing, discover the available `*-rules` skills under
 by the task. Start with its `SKILL.md`, then read the references for the work
 involved. Revisit skill selection when the scope expands.
 
-| Domain | Skill entry point |
-| --- | --- |
-| Rust code, Cargo, tests, documentation, and tooling | [rust-rules](.agents/skills/rust-rules/SKILL.md) |
-| GitHub Actions workflows | [github-actions-rules](.agents/skills/github-actions-rules/SKILL.md) |
+| Domain                                              | Skill entry point                                                    |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| Rust code, Cargo, tests, documentation, and tooling | [rust-rules](.agents/skills/rust-rules/SKILL.md)                     |
+| GitHub Actions workflows                            | [github-actions-rules](.agents/skills/github-actions-rules/SKILL.md) |
 
 For Rust CI changes, load both skills. Keep domain rules in their skills; keep
 repository-specific instructions here.
