@@ -1,15 +1,28 @@
-//! Reserve the CLI entry point for local model preparation and serving.
+//! Prepare local model dependencies and coordinate recorded Podman deployments.
 
+mod app;
+mod artifacts;
+mod cli;
+mod config;
+mod inputs;
+mod lifecycle;
+mod process;
+mod runtime;
+mod state;
+
+use clap::Parser;
 use std::process::ExitCode;
 
 #[expect(
     clippy::print_stderr,
-    reason = "CLI diagnostic reports unimplemented commands"
+    reason = "CLI diagnostics report command failures"
 )]
 fn main() -> ExitCode {
-    eprintln!(
-        "{}: CLI commands are not implemented yet",
-        env!("CARGO_PKG_NAME")
-    );
-    ExitCode::FAILURE
+    match app::run(cli::Cli::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("lmserve: {error:#}");
+            ExitCode::FAILURE
+        }
+    }
 }

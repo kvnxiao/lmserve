@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -23,11 +24,21 @@ jobs:
         with:
           persist-credentials: false
       - name: Install toolchains
-        run: |
-          rustup toolchain install stable --profile minimal --component clippy
-          rustup toolchain install nightly --profile minimal --component rustfmt
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          toolchain: stable
+          components: clippy
+          build-warnings: ""
+      - name: Install nightly rustfmt
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          toolchain: nightly
+          components: rustfmt
+          build-warnings: ""
       - name: Install development tools
-        run: cargo +stable install --locked just cargo-audit cargo-machete
+        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
+        with:
+          tool: just cargo-audit cargo-machete dprint
       - name: Verify workspace
         run: |
           just --list
@@ -40,10 +51,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install stable and task runner
-        run: |
-          rustup toolchain install stable --profile minimal --component clippy
-          cargo +stable install --locked just
+      - name: Install stable toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          toolchain: stable
+          build-warnings: ""
+      - name: Install task runner
+        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
+        with:
+          tool: just
       - name: Check each workspace member
         shell: bash
         run: |

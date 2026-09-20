@@ -1,0 +1,96 @@
+name: lmserve-example
+
+x-lmserve:
+  version: 1
+
+services:
+  vllm:
+    image: registry.example.org/vllm:replace-with-selected-version
+    command:
+      - --model
+      - /models/model
+      - --served-model-name
+      - local-model
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    devices:
+      - nvidia.com/gpu=all
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - type: bind
+        source: ${LMSERVE_MODEL_VLLM_PATH}
+        target: /models/model
+        read_only: true
+    networks:
+      default:
+        aliases:
+          - model-api
+    stop_grace_period: 30s
+    x-lmserve:
+      huggingface:
+        repo: example-org/replace-with-vllm-snapshot
+        revision: replace-with-selected-ref
+      companions:
+        - webui
+      readiness:
+        url: http://127.0.0.1:8000/health
+
+  ninfer:
+    image: localhost/lmserve-ninfer:chosen-build
+    build:
+      context: https://github.com/Neroued/ninfer.git#replace-with-selected-ref
+      dockerfile: Dockerfile
+    entrypoint:
+      - REPLACE_WITH_NINFER_SERVER_EXECUTABLE
+    command:
+      - REPLACE_WITH_MODEL_PATH_FLAG
+      - /models/model.gguf
+      - REPLACE_WITH_LISTEN_FLAGS_FOR_0.0.0.0_PORT_8000
+    environment:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    devices:
+      - nvidia.com/gpu=all
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - type: bind
+        source: ${LMSERVE_MODEL_NINFER_PATH}
+        target: /models/model.gguf
+        read_only: true
+    networks:
+      default:
+        aliases:
+          - model-api
+    stop_grace_period: 30s
+    x-lmserve:
+      huggingface:
+        repo: example-org/replace-with-ninfer-artifact
+        revision: replace-with-selected-ref
+        file: replace-with-compatible-model.gguf
+      companions:
+        - webui
+      readiness:
+        url: http://127.0.0.1:8000/REPLACE_WITH_HEALTH_PATH
+
+  webui:
+    image: registry.example.org/open-webui:replace-with-selected-version
+    environment:
+      OPENAI_API_BASE_URL: http://model-api:8000/v1
+      WEBUI_AUTH: "True"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - webui-data:/app/backend/data
+
+volumes:
+  webui-data:
+
+networks:
+  default:
