@@ -27,6 +27,9 @@ test-provider:
 build:
     cargo +stable build --workspace --all-targets --all-features --locked
 
+install:
+    cargo +stable install --path lmserve --locked
+
 doc:
     RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo +stable doc --workspace --all-features --no-deps --locked
 
