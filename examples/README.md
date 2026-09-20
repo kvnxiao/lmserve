@@ -4,7 +4,9 @@
 model, and a persistent Open WebUI companion. It is a structural example with placeholder
 references, not a verified serving recipe. No example has been deployed against a live model or GPU.
 
-Copy the file into your own configuration directory. Select compatible images, model
+Copy the file to `~/.config/lmserve/compose.yaml`, or `$XDG_CONFIG_HOME/lmserve/compose.yaml` when
+`XDG_CONFIG_HOME` is nonempty. Commands use this file when the current directory has no
+`compose.yaml`; `--file PATH` selects a different file explicitly. Select compatible images, model
 repositories/revisions, and artifact formats. Replace the NInfer source ref, Dockerfile path if
 necessary, executable, arguments, and readiness path using the selected upstream revision's
 documentation. Check vLLM command and Open WebUI environment settings against the chosen image

@@ -9,8 +9,12 @@ use serde::Serialize;
 #[derive(Parser)]
 #[command(version, about)]
 pub(crate) struct Cli {
-    #[arg(long, global = true, default_value = "compose.yaml")]
-    pub(crate) file: Utf8PathBuf,
+    #[arg(
+        long,
+        global = true,
+        help = "Compose file [default: ./compose.yaml, then the lmserve config directory]"
+    )]
+    pub(crate) file: Option<Utf8PathBuf>,
     #[arg(long, global = true, default_value = "podman-compose")]
     pub(crate) provider: String,
     #[command(subcommand)]

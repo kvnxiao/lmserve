@@ -132,7 +132,21 @@ fn valid_name(name: &str) -> bool {
 }
 
 impl Project {
-    pub(crate) fn load(path: &Utf8Path) -> Result<Self> {
+    pub(crate) fn load(path: Option<&Utf8Path>) -> Result<Self> {
+        let default;
+        let path = if let Some(path) = path {
+            path
+        } else {
+            let local = Utf8Path::new("compose.yaml");
+            default = match fs_err::symlink_metadata(local) {
+                Ok(_) => local.to_owned(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    state::xdg("XDG_CONFIG_HOME", ".config")?.join("lmserve/compose.yaml")
+                }
+                Err(error) => return Err(error.into()),
+            };
+            &default
+        };
         let path = path.canonicalize_utf8().context("load Compose file")?;
         let directory = path
             .parent()

@@ -233,6 +233,97 @@ mod tests {
     }
 
     #[test]
+    fn default_compose_path_uses_config_directory() {
+        for config_home in [Some("config"), None, Some("")] {
+            let fixture = Fixture::new();
+            let directory = fixture
+                .directory
+                .path()
+                .join(if config_home == Some("config") {
+                    "config/lmserve"
+                } else {
+                    ".config/lmserve"
+                });
+            fs_err::create_dir_all(&directory).expect("create configuration directory");
+            fs_err::rename(
+                fixture.directory.path().join("compose.yaml"),
+                directory.join("compose.yaml"),
+            )
+            .expect("move Compose file to configuration directory");
+            let mut command = fixture.command(&["validate", "first"]);
+            match config_home {
+                None => {
+                    command.env_remove("XDG_CONFIG_HOME");
+                }
+                Some("") => {
+                    command.env("XDG_CONFIG_HOME", "");
+                }
+                Some(_) => {}
+            }
+            command.assert().success();
+        }
+    }
+
+    #[test]
+    fn default_compose_path_preserves_local_and_explicit_precedence() {
+        let fixture = Fixture::new();
+        let directory = fixture.directory.path().join("config/lmserve");
+        fs_err::create_dir_all(&directory).expect("create configuration directory");
+        fs_err::write(directory.join("compose.yaml"), "invalid: [")
+            .expect("write invalid default configuration");
+        fixture.success(&["validate", "first"]);
+        fs_err::rename(
+            fixture.directory.path().join("compose.yaml"),
+            fixture.directory.path().join("selected.yaml"),
+        )
+        .expect("move explicit configuration");
+        fs_err::write(fixture.directory.path().join("compose.yaml"), "invalid: [")
+            .expect("write invalid local configuration");
+        fixture.success(&["--file", "selected.yaml", "validate", "first"]);
+        fs_err::copy(
+            fixture.directory.path().join("selected.yaml"),
+            directory.join("compose.yaml"),
+        )
+        .expect("install valid default configuration");
+        fixture.command(&["validate", "first"]).assert().failure();
+        fs_err::remove_file(fixture.directory.path().join("compose.yaml"))
+            .expect("remove invalid local configuration");
+        fs_err::os::unix::fs::symlink(
+            "missing.yaml",
+            fixture.directory.path().join("compose.yaml"),
+        )
+        .expect("create dangling local Compose symlink");
+        fixture.command(&["validate", "first"]).assert().failure();
+        fixture
+            .command(&["--file", "missing.yaml", "validate", "first"])
+            .assert()
+            .failure();
+    }
+
+    #[test]
+    fn default_compose_path_errors_do_not_block_status() {
+        let fixture = Fixture::new();
+        fs_err::remove_file(fixture.directory.path().join("compose.yaml"))
+            .expect("remove local configuration");
+        fixture.command(&["validate"]).assert().failure();
+        assert!(!fixture.directory.path().join("config").exists());
+        let output = fixture
+            .command(&["validate"])
+            .env("XDG_CONFIG_HOME", "relative")
+            .output()
+            .expect("execute validation");
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("XDG_CONFIG_HOME must be absolute")
+        );
+        fixture
+            .command(&["status"])
+            .env("XDG_CONFIG_HOME", "relative")
+            .assert()
+            .success();
+    }
+
+    #[test]
     fn validation_and_planning_do_not_mutate_managed_state() {
         let fixture = Fixture::new();
         fixture.success(&["validate"]);

@@ -40,10 +40,13 @@ startup, endpoint readiness, and failure. A successful submission does not mean 
 Updates run in the foreground; lifecycle commands do not download models, pull images, or build
 images.
 
-The global `--file PATH` selects a Compose file, defaulting to `./compose.yaml`. The global
-`--provider PATH` selects the provider executable, defaulting to `podman-compose`. The provider must
-report a numeric `major.minor.patch` release of 1.5.0 or newer. Relative Compose paths resolve from
-the selected file's directory.
+The global `--file PATH` selects a Compose file. Without it, lmserve uses `./compose.yaml` when
+present, then `$XDG_CONFIG_HOME/lmserve/compose.yaml` (or `~/.config/lmserve/compose.yaml` when
+`XDG_CONFIG_HOME` is unset or empty). Put your Compose file in that configuration directory to run
+commands from any directory without a local Compose file. If the selected file is invalid, lmserve
+reports an error without trying another location. The global `--provider PATH` selects the provider
+executable, defaulting to `podman-compose`. The provider must report a numeric `major.minor.patch`
+release of 1.5.0 or newer. Relative Compose paths resolve from the selected file's directory.
 
 See [configuration and command reference](docs/usage.md),
 [state, storage, and recovery](docs/operations.md), and [example setup](examples/README.md).

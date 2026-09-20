@@ -5,6 +5,17 @@ metadata is a model entry, addressed by its service name. Ordinary Compose field
 builds, commands, devices, ports, storage, and dependencies. `podman-compose` 1.5.0 or newer renders
 those fields; `lmserve` validates its extension metadata and selected deployment.
 
+## Compose file location
+
+The global `--file PATH` selects a Compose file explicitly. Without it, lmserve uses
+`./compose.yaml` if present; otherwise it uses `$XDG_CONFIG_HOME/lmserve/compose.yaml`. When
+`XDG_CONFIG_HOME` is unset or empty, the user configuration path is
+`~/.config/lmserve/compose.yaml`. A nonempty `XDG_CONFIG_HOME` must be absolute.
+
+If an explicitly selected file is missing or invalid, or a local file is invalid, lmserve reports an
+error without trying another location. Relative Compose paths, including `.env`, resolve from the
+selected file's directory. Recorded inspection and shutdown remain available without a Compose file.
+
 ## Extension schema
 
 Project-level `x-lmserve` accepts:

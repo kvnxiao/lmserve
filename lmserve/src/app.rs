@@ -22,32 +22,21 @@ use std::process::Stdio;
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
     let store = Store::discover()?;
+    let file = cli.file.as_deref();
     match cli.command {
-        Command::List => list(&store, &cli.file),
-        Command::Validate { entry } => validate(&cli.file, &cli.provider, entry.as_deref()),
-        Command::Plan { action, target } => plan(&store, &cli.file, &cli.provider, action, &target),
-        Command::UpdateImages(target) => update(
-            &store,
-            &cli.file,
-            &cli.provider,
-            Action::UpdateImages,
-            &target,
-        ),
-        Command::UpdateModels(target) => update(
-            &store,
-            &cli.file,
-            &cli.provider,
-            Action::UpdateModels,
-            &target,
-        ),
-        Command::Start { entry } => submit(&store, &cli.file, &cli.provider, Action::Start, &entry),
-        Command::Stop { entry } => submit(&store, &cli.file, &cli.provider, Action::Stop, &entry),
-        Command::Restart { entry } => {
-            submit(&store, &cli.file, &cli.provider, Action::Restart, &entry)
+        Command::List => list(&store, file),
+        Command::Validate { entry } => validate(file, &cli.provider, entry.as_deref()),
+        Command::Plan { action, target } => plan(&store, file, &cli.provider, action, &target),
+        Command::UpdateImages(target) => {
+            update(&store, file, &cli.provider, Action::UpdateImages, &target)
         }
-        Command::Switch { entry } => {
-            submit(&store, &cli.file, &cli.provider, Action::Switch, &entry)
+        Command::UpdateModels(target) => {
+            update(&store, file, &cli.provider, Action::UpdateModels, &target)
         }
+        Command::Start { entry } => submit(&store, file, &cli.provider, Action::Start, &entry),
+        Command::Stop { entry } => submit(&store, file, &cli.provider, Action::Stop, &entry),
+        Command::Restart { entry } => submit(&store, file, &cli.provider, Action::Restart, &entry),
+        Command::Switch { entry } => submit(&store, file, &cli.provider, Action::Switch, &entry),
         Command::Status { entry } => status(&store, entry.as_deref()),
         Command::Logs {
             entry,
@@ -70,7 +59,7 @@ pub(crate) fn report(message: &str) {
 
 fn submit(
     store: &Store,
-    file: &Utf8Path,
+    file: Option<&Utf8Path>,
     provider: &str,
     action: Action,
     entry: &str,
@@ -86,7 +75,7 @@ fn submit(
     Ok(())
 }
 
-fn list(store: &Store, file: &Utf8Path) -> Result<()> {
+fn list(store: &Store, file: Option<&Utf8Path>) -> Result<()> {
     match Project::load(file) {
         Ok(project) => {
             for entry in project.models {
@@ -98,7 +87,7 @@ fn list(store: &Store, file: &Utf8Path) -> Result<()> {
     status(store, None)
 }
 
-fn validate(file: &Utf8Path, provider: &str, entry: Option<&str>) -> Result<()> {
+fn validate(file: Option<&Utf8Path>, provider: &str, entry: Option<&str>) -> Result<()> {
     let project = Project::load(file)?;
     let entries = entry.map_or_else(|| project.models.clone(), |entry| vec![entry.to_owned()]);
     let mut failures = Vec::new();
@@ -128,7 +117,7 @@ fn targets(project: &Project, target: &Target) -> Vec<String> {
 
 fn update(
     store: &Store,
-    file: &Utf8Path,
+    file: Option<&Utf8Path>,
     provider: &str,
     action: Action,
     target: &Target,
@@ -169,7 +158,7 @@ fn update(
 
 fn plan(
     store: &Store,
-    file: &Utf8Path,
+    file: Option<&Utf8Path>,
     provider: &str,
     action: Action,
     target: &Target,

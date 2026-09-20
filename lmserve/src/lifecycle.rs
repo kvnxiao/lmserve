@@ -34,7 +34,7 @@ pub(crate) enum Submission {
 
 pub(crate) fn submit(
     store: &Store,
-    file: &Utf8Path,
+    file: Option<&Utf8Path>,
     provider: &str,
     action: Action,
     entry: &str,
