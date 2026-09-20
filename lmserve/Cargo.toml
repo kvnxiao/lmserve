@@ -8,18 +8,22 @@ rust-version.workspace = true
 description = "Prepare and serve local language models with Podman"
 
 [dependencies]
-anyhow = "1"
-camino = { version = "1", features = ["serde1"] }
+anyhow.workspace = true
+camino = { workspace = true, features = ["serde1"] }
 clap = { version = "4", features = ["derive"] }
-fs-err = "3"
+fs-err.workspace = true
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 nix = { version = "0.31", features = ["process", "signal"] }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde.workspace = true
+serde_json.workspace = true
 serde_yaml_ng = "0.10"
 sha2 = "0.11"
 tempfile = "3"
+
+[dev-dependencies]
+assert_cmd = "2"
+escargot = "0.5"
 
 [lints]
 workspace = true

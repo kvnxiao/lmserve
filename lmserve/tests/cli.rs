@@ -3,22 +3,41 @@
 
 #[cfg(test)]
 mod tests {
+    use assert_cmd::assert::OutputAssertExt;
     use serde_json::Value;
     use serde_json::json;
     use std::io::Read;
     use std::io::Write;
     use std::net::TcpListener;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::process::Command;
     use std::process::Output;
     use std::sync::Arc;
+    use std::sync::OnceLock;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::Ordering;
     use std::thread;
     use std::time::Duration;
     use std::time::Instant;
     use tempfile::TempDir;
+
+    fn fake_tool() -> &'static Path {
+        static BINARY: OnceLock<std::path::PathBuf> = OnceLock::new();
+        BINARY.get_or_init(|| {
+            let binary = escargot::CargoBuild::new()
+                .bin("lmserve-test-tools")
+                .manifest_path(
+                    Path::new(env!("CARGO_MANIFEST_DIR")).join("../lmserve-test-tools/Cargo.toml"),
+                )
+                .current_release()
+                .current_target()
+                .arg("--locked")
+                .arg("--offline")
+                .run()
+                .expect("build native fake tools");
+            binary.path().to_path_buf()
+        })
+    }
 
     struct Fixture {
         directory: TempDir,
@@ -33,10 +52,8 @@ mod tests {
             fs_err::create_dir(&bin).expect("create fake tool directory");
             for name in ["podman", "podman-compose", "hf", "nvidia-ctk"] {
                 let path = bin.join(name);
-                fs_err::write(&path, include_str!("fixtures/tool.py"))
-                    .expect("write fake executable");
-                fs_err::set_permissions(path, std::fs::Permissions::from_mode(0o700))
-                    .expect("make fake executable runnable");
+                fs_err::os::unix::fs::symlink(fake_tool(), path)
+                    .expect("link native fake executable");
             }
             let mut fixture = Self {
                 directory,
@@ -82,13 +99,7 @@ mod tests {
         }
 
         fn success(&self, args: &[&str]) -> Output {
-            let output = self.run(args);
-            assert!(
-                output.status.success(),
-                "{args:?}: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            output
+            self.command(args).assert().success().get_output().clone()
         }
 
         fn state(&self) -> Value {
@@ -1131,10 +1142,21 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires LMSERVE_TEST_PROVIDER pointing to podman-compose 1.5.0; Podman remains fake"]
+    #[ignore = "requires externally installed podman-compose 1.5.0; Podman remains fake"]
     fn provider_contract() {
-        let provider =
-            std::env::var("LMSERVE_TEST_PROVIDER").expect("select installed provider explicitly");
+        let selected =
+            std::env::var_os("LMSERVE_TEST_PROVIDER").unwrap_or_else(|| "podman-compose".into());
+        let selected = Path::new(&selected);
+        let provider = if selected.components().count() > 1 {
+            selected.to_path_buf()
+        } else {
+            std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
+                .map(|directory| directory.join(selected))
+                .find(|path| path.is_file())
+                .expect("install podman-compose 1.5.0 or set LMSERVE_TEST_PROVIDER to its absolute path")
+        };
+        let provider = fs_err::canonicalize(provider).expect("resolve installed provider path");
+        let provider = provider.to_str().expect("provider path is UTF-8");
         let mut fixture = Fixture::new();
         let server = HealthServer::new();
         server.configure(&mut fixture);
@@ -1148,12 +1170,12 @@ mod tests {
         fixture.config["services"]["first"]["depends_on"] =
             json!({"init": {"condition": "service_healthy"}});
         fixture.write();
-        fixture.success(&["--provider", &provider, "validate", "first"]);
-        fixture.success(&["--provider", &provider, "update-models", "first"]);
-        fixture.success(&["--provider", &provider, "update-images", "first"]);
-        fixture.success(&["--provider", &provider, "update-images", "second"]);
+        fixture.success(&["--provider", provider, "validate", "first"]);
+        fixture.success(&["--provider", provider, "update-models", "first"]);
+        fixture.success(&["--provider", provider, "update-images", "first"]);
+        fixture.success(&["--provider", provider, "update-images", "second"]);
         assert_eq!(
-            fixture.wait(&fixture.success(&["--provider", &provider, "start", "first"]))["phase"],
+            fixture.wait(&fixture.success(&["--provider", provider, "start", "first"]))["phase"],
             "ready"
         );
         let calls = fixture.calls();

@@ -63,6 +63,7 @@ cargo +stable install --locked cargo-audit cargo-machete dprint
 just --list
 just verify
 just check-msrv lmserve
+just check-msrv lmserve-test-tools
 ```
 
 `rust-toolchain.toml` selects floating stable Rust for builds, tests, and Clippy.
@@ -90,9 +91,10 @@ requires a scoped expectation in CLI output functions. Test contexts permit
 - `just lint` checks formatting, Clippy, and rustdoc warnings.
 - `just doc` builds documentation with warnings treated as errors.
 - `just test` runs the workspace tests, including any doctests.
-- `just test-provider` uses `uv` to run the provider contract test with
-  `podman-compose` 1.5.0 and a fake Podman executable. It does not run containers
-  or use a GPU.
+- `just test-provider` runs the provider contract test with externally installed
+  `podman-compose` 1.5.0 and a fake Podman executable. It resolves the provider
+  from `PATH`; set `LMSERVE_TEST_PROVIDER` to select an explicit executable path.
+  It does not install tools, run containers, or use a GPU.
 - `just dependencies` checks advisories and unused dependencies.
 - `just build` builds all workspace targets.
 - `just verify` runs lint checks, tests, dependency checks, and builds.
@@ -108,10 +110,16 @@ Runtime tools are not required for the default build and test tasks. Cargo
 requirements use major versions for stable crates and the current minor for
 crates below 1.0; `Cargo.lock` records the exact dependency resolution.
 
+The integration suite uses `assert_cmd` for CLI assertions and `escargot` to
+build the Rust fake tools once per test process. Each test links those tools into
+an isolated executable directory. The provider contract test requires the user's
+external provider installation; ordinary tests use only native Rust executables.
+
 ## Workspace
 
 - `Cargo.toml` defines members, shared package metadata, and lint policy.
 - `lmserve/` contains the CLI binary crate.
+- `lmserve-test-tools/` contains the unpublished fake-tool executable used by tests.
 - `.agents/skills/` contains Rust and GitHub Actions development rules.
 - `AGENTS.md` defines contributor instructions and application constraints.
 

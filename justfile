@@ -22,7 +22,7 @@ test:
     cargo +stable test --workspace --all-features --locked
 
 test-provider:
-    uv run --no-project --with podman-compose==1.5.0 python -c 'import os, shutil; os.environ["LMSERVE_TEST_PROVIDER"] = shutil.which("podman-compose"); os.execvp("rustup", ["rustup", "run", "stable", "cargo", "test", "--locked", "--test", "cli", "provider_contract", "--", "--ignored"])'
+    cargo +stable test --package lmserve --locked --test cli provider_contract -- --ignored
 
 build:
     cargo +stable build --workspace --all-targets --all-features --locked
